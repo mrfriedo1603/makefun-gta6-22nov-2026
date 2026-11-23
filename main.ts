@@ -1,9 +1,8 @@
-// Solmar Bay — make.fun gta6-01 entry program (Node 22, standard library only).
-// Hands the game in: copies this repository's game/ and screenshots/ to the
-// output directory and writes /output/dossier.json with the kit's vendored
-// dossier library. Outside the grader, MAKEFUN_OUTPUT_DIR stands in for
-// /output:  mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
-// The program is deterministic: same input files, same output bytes.
+// Solmar Bay — make.fun entry program (Node 22, standard library only).
+// Copies game/ and screenshots/ beside this file to /output and writes
+// /output/dossier.json with the kit's buildDossier library.
+// Outside the grader, MAKEFUN_OUTPUT_DIR stands in for /output:
+//   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
 import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -20,8 +19,6 @@ if (existsSync(join(here, 'screenshots'))) {
   cpSync(join(here, 'screenshots'), join(out, 'screenshots'), { recursive: true });
 }
 
-// The scorer's caps from the kit (reference/gate.json): the text cap shapes
-// the dossier bytes; the others refuse an entry the scorer would refuse.
 writeFileSync(
   join(out, 'dossier.json'),
   buildDossier(out, {
