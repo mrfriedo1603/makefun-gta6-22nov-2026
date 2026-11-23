@@ -1,112 +1,128 @@
-// rig.js — procedural character rigs. Every person in Solmar Bay is built
-// from the same small skeleton: a spine and two leg and two arm bone chains
-// whose joint angles come from a walk-cycle function, so walk, run, punch
-// and aim are all poses of one rig, not sprite frames. The reference
-// package's idea (named skeleton rigs with walk phases) is rebuilt here in
-// this game's own format; no rig data is imported from anywhere.
+// Solmar Bay — procedural character rigs.
+// A rig is a small bone chain: hips -> torso -> head, with two arms and two
+// legs hanging off the torso. The walk cycle swings the limbs on a sine
+// phase, so every pedestrian, cop and the player walks with the same rig
+// format but their own colours, height and stride.
 
-const SKINS = ['#e8b88a', '#c98d5f', '#8a5a3b', '#f0c8a0', '#6e4426'];
-const SHIRTS = ['#d94f3d', '#3d7dd9', '#e8c33d', '#4fae5c', '#8a5fbf', '#e8e8e8', '#2b2b2b', '#e87fa8'];
-const PANTS = ['#2b3a55', '#3d3d3d', '#5a3b2b', '#7a8a99'];
-const HAIRS = ['#1a1a1a', '#4a2f1d', '#b8b8b8', '#d9a03d', '#7a2f1d'];
-
-export function makeRig(rng) {
+export function makeRig(opts) {
   return {
-    skin: SKINS[Math.floor(rng() * SKINS.length)],
-    shirt: SHIRTS[Math.floor(rng() * SHIRTS.length)],
-    pants: PANTS[Math.floor(rng() * PANTS.length)],
-    hair: HAIRS[Math.floor(rng() * HAIRS.length)],
-    phase: rng() * Math.PI * 2,
-    tall: 0.92 + rng() * 0.2,
+    shirt: opts.shirt || '#c84a3a',
+    pants: opts.pants || '#2e3a4a',
+    skin: opts.skin || '#e8b48a',
+    hair: opts.hair || '#2a2018',
+    height: opts.height || 1,
+    stride: opts.stride || 1,
+    phase: Math.random() * Math.PI * 2,
   };
 }
 
-export function makeHeroRig() {
-  return { skin: '#c98d5f', shirt: '#d94f3d', pants: '#2b3a55', hair: '#1a1a1a', phase: 0, tall: 1.05 };
-}
+export const RIG_PALETTES = {
+  danny: { shirt: '#c84a3a', pants: '#2e3a4a', skin: '#e8b48a', hair: '#1c1410', height: 1.05 },
+  mara: { shirt: '#7a4a8a', pants: '#1e1e26', skin: '#d9a06f', hair: '#3a1a1a', height: 1.0 },
+  cop: { shirt: '#2a4a7a', pants: '#1e2a3a', skin: '#c99a6a', hair: '#101010', height: 1.08 },
+  ped: [
+    { shirt: '#4a7a4a', pants: '#3a3a2a', skin: '#e8b48a', hair: '#4a2a10' },
+    { shirt: '#d9a03a', pants: '#4a4a5a', skin: '#b07a4a', hair: '#0a0a0a' },
+    { shirt: '#3a7a8a', pants: '#2a2a2a', skin: '#f0c9a0', hair: '#6a4a2a' },
+    { shirt: '#a04a6a', pants: '#3a2a4a', skin: '#d9a06f', hair: '#2a2a2a' },
+    { shirt: '#5a5a7a', pants: '#4a3a2a', skin: '#c98d5a', hair: '#8a8a8a' },
+  ],
+};
 
-export function makeCopRig() {
-  return { skin: '#e8b88a', shirt: '#1d3f8a', pants: '#16233d', hair: '#1a1a1a', phase: 0, tall: 1.05, cop: true };
-}
+// Draw a rigged character, top-down with a slight side view so the walk
+// cycle reads. (x, y) is the feet position; angle faces the walk direction;
+// speed 0..1 drives the swing; t is the animation clock.
+export function drawRig(ctx, rig, x, y, angle, speed, t) {
+  const s = rig.height;
+  const swing = Math.sin(t * 9 + rig.phase) * 0.55 * speed * rig.stride;
+  const swing2 = Math.sin(t * 9 + rig.phase + Math.PI) * 0.55 * speed * rig.stride;
+  const bob = Math.abs(Math.sin(t * 9 + rig.phase)) * 2.2 * speed * s;
 
-// Walk-cycle joint angles for one leg chain at phase p (0..2π).
-function legSwing(p, amp) {
-  return { hip: Math.sin(p) * amp, knee: Math.max(0, Math.sin(p + 0.6)) * amp * 1.1 };
-}
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
 
-function drawLimb(ctx, x, y, angle, len1, len2, a1, a2, width, color) {
-  const x1 = x + Math.cos(angle + a1) * len1;
-  const y1 = y + Math.sin(angle + a1) * len1;
-  const x2 = x1 + Math.cos(angle + a1 + a2) * len2;
-  const y2 = y1 + Math.sin(angle + a1 + a2) * len2;
-  ctx.strokeStyle = color;
-  ctx.lineWidth = width;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(x, y);
-  ctx.lineTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
-  return { x: x2, y: y2 };
-}
-
-// Draw a rigged person at (x, y) facing `angle` (radians, 0 = east).
-// `move` is 0..1 (how hard they are moving), `pose` is 'walk' | 'punch' |
-// 'aim' | 'idle'. All drawing is in world units; the camera scales it.
-export function drawRig(ctx, rig, x, y, angle, move, pose) {
-  const s = 15 * rig.tall; // shoulder height in world units
-  const bob = pose === 'walk' ? Math.abs(Math.sin(rig.phase)) * 2.2 * move : 0;
   // Shadow.
   ctx.fillStyle = 'rgba(0,0,0,0.28)';
   ctx.beginPath();
-  ctx.ellipse(x, y + s * 0.72, s * 0.62, s * 0.24, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 2, 11 * s, 7 * s, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  const hx = x, hy = y - bob; // hip
-  const sx = x, sy = y - s - bob; // shoulder
-  const amp = 0.55 * Math.min(1, move + 0.25);
-  const legL = legSwing(rig.phase, amp);
-  const legR = legSwing(rig.phase + Math.PI, amp);
-  const armL = legSwing(rig.phase + Math.PI, amp * 0.7);
-  const armR = legSwing(rig.phase, amp * 0.7);
+  const legLen = 9 * s;
+  const armLen = 8 * s;
 
-  // Legs (behind torso).
-  drawLimb(ctx, hx, hy, Math.PI / 2, s * 0.42, s * 0.42, -legL.hip, legL.knee, 5, rig.pants);
-  drawLimb(ctx, hx, hy, Math.PI / 2, s * 0.42, s * 0.42, -legR.hip, legR.knee, 5, rig.pants);
-  // Torso.
-  ctx.strokeStyle = rig.shirt;
-  ctx.lineWidth = 9;
+  // Legs (behind the torso): two bones swinging opposite.
+  ctx.strokeStyle = rig.pants;
+  ctx.lineWidth = 4.5 * s;
   ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.moveTo(hx, hy + 2);
-  ctx.lineTo(sx, sy);
+  ctx.moveTo(-2.5 * s, 0);
+  ctx.lineTo(-2.5 * s + swing * 10, legLen);
+  ctx.moveTo(2.5 * s, 0);
+  ctx.lineTo(2.5 * s + swing2 * 10, legLen);
   ctx.stroke();
-  if (rig.cop) {
-    ctx.fillStyle = '#ffd23d';
-    ctx.fillRect(sx - 5, sy + 2, 10, 3);
-  }
-  // Arms.
-  if (pose === 'punch') {
-    drawLimb(ctx, sx, sy, angle, s * 0.34, s * 0.34, 0, 0, 4.5, rig.skin);
-    drawLimb(ctx, sx, sy, angle + 0.5, s * 0.3, s * 0.3, 0, 0.4, 4.5, rig.skin);
-  } else if (pose === 'aim') {
-    drawLimb(ctx, sx, sy, angle, s * 0.34, s * 0.34, 0, 0, 4.5, rig.skin);
-    drawLimb(ctx, sx, sy, angle, s * 0.34, s * 0.34, 0, 0, 4.5, rig.shirt);
-  } else {
-    drawLimb(ctx, sx, sy, Math.PI / 2, s * 0.34, s * 0.34, -armL.hip * 0.8, armL.knee * 0.5, 4.5, rig.skin);
-    drawLimb(ctx, sx, sy, Math.PI / 2, s * 0.34, s * 0.34, -armR.hip * 0.8, armR.knee * 0.5, 4.5, rig.skin);
-  }
-  // Head + hair.
+
+  // Feet.
+  ctx.fillStyle = '#1c1c1c';
+  ctx.beginPath();
+  ctx.arc(-2.5 * s + swing * 10, legLen, 2.6 * s, 0, Math.PI * 2);
+  ctx.arc(2.5 * s + swing2 * 10, legLen, 2.6 * s, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Torso.
+  ctx.fillStyle = rig.shirt;
+  ctx.beginPath();
+  ctx.ellipse(0, -6 * s - bob, 8.5 * s, 10 * s, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Arms: swing opposite to the legs.
+  ctx.strokeStyle = rig.shirt;
+  ctx.lineWidth = 4 * s;
+  ctx.beginPath();
+  ctx.moveTo(-7 * s, -12 * s - bob);
+  ctx.lineTo(-9 * s + swing2 * 8, -4 * s - bob);
+  ctx.moveTo(7 * s, -12 * s - bob);
+  ctx.lineTo(9 * s + swing * 8, -4 * s - bob);
+  ctx.stroke();
+
+  // Hands.
   ctx.fillStyle = rig.skin;
   ctx.beginPath();
-  ctx.arc(sx, sy - s * 0.34, s * 0.30, 0, Math.PI * 2);
+  ctx.arc(-9 * s + swing2 * 8, -4 * s - bob, 2.4 * s, 0, Math.PI * 2);
+  ctx.arc(9 * s + swing * 8, -4 * s - bob, 2.4 * s, 0, Math.PI * 2);
   ctx.fill();
+
+  // Head.
+  ctx.fillStyle = rig.skin;
+  ctx.beginPath();
+  ctx.arc(0, -20 * s - bob, 6.5 * s, 0, Math.PI * 2);
+  ctx.fill();
+  // Hair cap.
   ctx.fillStyle = rig.hair;
   ctx.beginPath();
-  ctx.arc(sx, sy - s * 0.40, s * 0.30, Math.PI, Math.PI * 2);
+  ctx.arc(0, -21.5 * s - bob, 6.3 * s, Math.PI, Math.PI * 2);
   ctx.fill();
-  if (rig.cop) {
-    ctx.fillStyle = '#16233d';
-    ctx.fillRect(sx - s * 0.30, sy - s * 0.52, s * 0.60, s * 0.14);
-  }
+
+  ctx.restore();
+}
+
+// Draw a simple top-down car shadow + body is done in vehicles.js; this
+// helper draws a lying-down body (for a knocked-out ped).
+export function drawDowned(ctx, rig, x, y, angle) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 12, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = rig.shirt;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 10, 5.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = rig.skin;
+  ctx.beginPath();
+  ctx.arc(11, 0, 4.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }

@@ -1,91 +1,141 @@
-// peds.js — pedestrians and the police. Pedestrians stroll the sidewalks
-// and scatter from gunfire and speeding cars. The police respond to the
-// wanted level: foot cops at 1 star, patrol cars from 2, and they get faster
-// and bolder as the heat rises.
+// Solmar Bay — pedestrians and police AI.
 
-import { randomSidewalkPoint, resolveBuildingCollision, WORLD } from './city.js';
-import { makeCar, updateCarPhysics } from './vehicles.js';
-import { makeRig, makeCopRig } from './rig.js';
+import { makeRig, drawRig, drawDowned, RIG_PALETTES } from './rig.js';
+import { collideBuildings, onRoad } from './city.js';
 
-export function makePed(city, rng, x, y) {
-  const p = x !== undefined ? { x, y } : randomSidewalkPoint(city, rng);
+let nextPedId = 1;
+
+export function makePed(city, x, y, kind) {
+  const palettes = RIG_PALETTES.ped;
+  const pal = palettes[Math.floor(Math.random() * palettes.length)];
   return {
-    ...p, angle: rng() * Math.PI * 2, speed: 26 + rng() * 26,
-    rig: makeRig(rng), phase: rng() * 6, state: 'walk',
-    wait: 0, flee: 0, panic: 0,
+    id: nextPedId++,
+    kind: kind || 'ped',
+    rig: makeRig(pal),
+    x, y,
+    angle: Math.random() * Math.PI * 2,
+    speed: 26 + Math.random() * 22,
+    // Sidewalk wandering: pick a road to walk alongside.
+    target: null,
+    state: 'walk',       // walk | flee | down | chase | arrest
+    stateT: 0,
+    downT: 0,
+    panic: 0,
   };
 }
 
-export function updatePed(ped, city, dt, rng, danger) {
-  ped.phase += dt * (ped.state === 'flee' ? 11 : 5);
-  if (danger && Math.hypot(danger.x - ped.x, danger.y - ped.y) < 260) {
-    ped.state = 'flee'; ped.flee = 2.5;
-    ped.angle = Math.atan2(ped.y - danger.y, ped.x - danger.x);
+export function spawnPeds(city, n, cx, cy, radius) {
+  const peds = [];
+  let guard = 0;
+  while (peds.length < n && guard++ < n * 40) {
+    const x = cx + (Math.random() * 2 - 1) * radius;
+    const y = cy + (Math.random() * 2 - 1) * radius;
+    if (x < 80 || y < 80 || x > 2520 || y > 2240) continue;
+    if (onRoad(city, x, y)) continue;
+    peds.push(makePed(city, x, y, 'ped'));
   }
-  if (ped.state === 'flee') {
-    ped.flee -= dt;
-    if (ped.flee <= 0) ped.state = 'walk';
-  }
-  if (ped.state === 'walk') {
-    ped.wait -= dt;
-    if (ped.wait <= 0) {
-      ped.angle += (rng() - 0.5) * 1.6;
-      ped.wait = 1.5 + rng() * 3;
-    }
-  }
-  const sp = ped.state === 'flee' ? ped.speed * 2.6 : ped.speed;
-  ped.x += Math.cos(ped.angle) * sp * dt;
-  ped.y += Math.sin(ped.angle) * sp * dt;
-  resolveBuildingCollision(city, ped, 12);
-  if (ped.x < 20 || ped.y < 20 || ped.x > WORLD - 20 || ped.y > WORLD - 20) {
-    ped.angle += Math.PI;
-    ped.x = Math.max(20, Math.min(WORLD - 20, ped.x));
-    ped.y = Math.max(20, Math.min(WORLD - 20, ped.y));
-  }
-  ped.rig.phase = ped.phase;
+  return peds;
 }
 
-export function makeCop(city, rng, x, y, inCar) {
-  const cop = makePed(city, rng, x, y);
-  cop.rig = makeCopRig();
-  cop.cop = true;
+export function makeCop(city, x, y) {
+  const cop = makePed(city, x, y, 'cop');
+  cop.rig = makeRig(RIG_PALETTES.cop);
+  cop.speed = 118;
   cop.state = 'chase';
-  cop.car = null;
-  if (inCar) {
-    cop.car = makeCar('police', x, y, 0);
-    cop.car.traffic = false;
-    cop.car.siren = 1;
-  }
   return cop;
 }
 
-// A police car chases the player: steer toward them, ram gently, and back
-// off to re-approach when it overshoots.
-export function updateCopCar(cop, player, dt) {
-  const car = cop.car;
-  const dx = player.x - car.x, dy = player.y - car.y;
-  const dist = Math.hypot(dx, dy) || 1;
-  const want = Math.atan2(dy, dx);
-  let diff = want - car.angle;
+// Pedestrian update: walk the sidewalks, flee from danger, get up after
+// being knocked down.
+export function updatePed(city, ped, player, dt, t) {
+  ped.stateT += dt;
+  if (ped.state === 'down') {
+    ped.downT -= dt;
+    if (ped.downT <= 0) {
+      ped.state = 'walk';
+      ped.panic = 0.4;
+    }
+    return;
+  }
+
+  // Danger: a fast car or a gunshot nearby makes peds flee.
+  const dx = ped.x - player.x;
+  const dy = ped.y - player.y;
+  const d = Math.hypot(dx, dy);
+  const playerSpeed = player.inCar ? Math.abs(player.car ? player.car.speed : 0) : 0;
+  if (d < 160 && (playerSpeed > 200 || player.firedRecently > 0)) {
+    ped.state = 'flee';
+    ped.panic = 1;
+  }
+  if (ped.state === 'flee') {
+    ped.panic -= dt * 0.25;
+    const runAngle = Math.atan2(dy, dx);
+    ped.angle = runAngle;
+    const sp = 150;
+    const nx = ped.x + Math.cos(runAngle) * sp * dt;
+    const ny = ped.y + Math.sin(runAngle) * sp * dt;
+    const fixed = collideBuildings(city, nx, ny, 10);
+    ped.x = fixed.x;
+    ped.y = fixed.y;
+    if (ped.panic <= 0) ped.state = 'walk';
+    return;
+  }
+
+  // Stroll: pick a nearby sidewalk target, walk to it, pick another.
+  if (!ped.target || Math.hypot(ped.target.x - ped.x, ped.target.y - ped.y) < 24) {
+    const road = city.roadsV[Math.floor(Math.random() * city.roadsV.length)];
+    const along = 120 + Math.random() * 2000;
+    const side = Math.random() < 0.5 ? -1 : 1;
+    ped.target = { x: road + side * 52, y: along };
+    if (Math.random() < 0.5) {
+      const hroad = city.roadsH[Math.floor(Math.random() * city.roadsH.length)];
+      ped.target = { x: 120 + Math.random() * 2200, y: hroad + side * 52 };
+    }
+  }
+  const ta = Math.atan2(ped.target.y - ped.y, ped.target.x - ped.x);
+  let diff = ta - ped.angle;
   while (diff > Math.PI) diff -= Math.PI * 2;
   while (diff < -Math.PI) diff += Math.PI * 2;
-  const steer = Math.max(-1, Math.min(1, diff * 1.8));
-  const throttle = dist > 60 ? 1 : 0.25;
-  updateCarPhysics(car, { throttle, steer, brake: dist < 40 }, dt);
-  car.siren = 1;
-  cop.x = car.x; cop.y = car.y;
+  ped.angle += Math.max(-3 * dt, Math.min(3 * dt, diff * 4 * dt));
+  const nx = ped.x + Math.cos(ped.angle) * ped.speed * dt;
+  const ny = ped.y + Math.sin(ped.angle) * ped.speed * dt;
+  const fixed = collideBuildings(city, nx, ny, 10);
+  ped.x = fixed.x;
+  ped.y = fixed.y;
 }
 
-// A foot cop runs at the player and tries to grab them.
-export function updateCopFoot(cop, player, city, dt) {
-  const dx = player.x - cop.x, dy = player.y - cop.y;
-  const dist = Math.hypot(dx, dy) || 1;
-  cop.angle = Math.atan2(dy, dx);
-  const sp = 150;
-  cop.x += Math.cos(cop.angle) * sp * dt;
-  cop.y += Math.sin(cop.angle) * sp * dt;
-  cop.phase += dt * 11;
-  cop.rig.phase = cop.phase;
-  resolveBuildingCollision(city, cop, 12);
-  return dist;
+// Police on foot: chase the player; touching the player for a beat busts them.
+export function updateCop(city, cop, player, dt, t) {
+  cop.stateT += dt;
+  const dx = player.x - cop.x;
+  const dy = player.y - cop.y;
+  const d = Math.hypot(dx, dy);
+  const ta = Math.atan2(dy, dx);
+  let diff = ta - cop.angle;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  cop.angle += Math.max(-4 * dt, Math.min(4 * dt, diff * 5 * dt));
+  // Cops are slower than a sprinting player, faster than a walking one.
+  const sp = player.inCar ? cop.speed * 1.35 : cop.speed;
+  const nx = cop.x + Math.cos(cop.angle) * sp * dt;
+  const ny = cop.y + Math.sin(cop.angle) * sp * dt;
+  const fixed = collideBuildings(city, nx, ny, 10);
+  cop.x = fixed.x;
+  cop.y = fixed.y;
+  // Arrest: stay glued to the player for a moment.
+  if (d < 26) {
+    cop.stateT += dt * 2;
+    return cop.stateT > 1.6;
+  }
+  return false;
+}
+
+export function drawPed(ctx, ped, t) {
+  if (ped.state === 'down') {
+    drawDowned(ctx, ped.rig, ped.x, ped.y, ped.angle);
+    return;
+  }
+  const moving = ped.state === 'flee' || ped.state === 'chase' || ped.state === 'walk';
+  const speed = ped.state === 'flee' || ped.state === 'chase' ? 1 : 0.55;
+  drawRig(ctx, ped.rig, ped.x, ped.y, ped.angle + Math.PI / 2, moving ? speed : 0, t);
 }

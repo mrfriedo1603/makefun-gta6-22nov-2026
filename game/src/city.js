@@ -1,6 +1,5 @@
-// city.js — Solmar Bay: a seeded grid city with roads, blocks, buildings,
-// a beach on the east edge and a park. All layout is deterministic from the
-// seed, so the same seed always builds the same city.
+// Solmar Bay — seeded city generation: roads, blocks, buildings, beach.
+// Everything is deterministic from the seed: the same seed builds the same city.
 
 export function mulberry32(seed) {
   let a = seed >>> 0;
@@ -12,134 +11,158 @@ export function mulberry32(seed) {
   };
 }
 
-export const WORLD = 3400;          // city is WORLD x WORLD world units
-export const ROAD_W = 96;           // road width
-export const BLOCK = 340;           // block pitch (road centre to road centre)
-export const BEACH_X = WORLD - 420; // beach starts here, sea beyond
+export const WORLD = 2600;
+export const ROAD_STEP = 300;
+export const ROAD_W = 64;
+export const BEACH_Y = 2280;
+export const WATER_Y = 2480;
 
-const PALETTES = [
-  ['#e8b48a', '#d9a06f', '#c98f5f'], // terracotta roofs
-  ['#9fb6c9', '#8aa7bd', '#7b9ab2'], // blue-grey
-  ['#c9b18a', '#bfa377', '#b09568'], // sand
-  ['#b98a9a', '#a87a8a', '#97707e'], // dusty rose
+const BUILDING_COLORS = [
+  '#e8b48a', '#d9a06f', '#f0c9a0', '#c98d6b', '#e6d3a3',
+  '#b7c9d9', '#a8b8c8', '#d9b8c4', '#f2e3c9', '#c4b49a',
+  '#9fb8a6', '#d9a0a0', '#e0c080', '#b0a8c8', '#8fb8a8',
 ];
+const ROOF_COLORS = ['#8a6a4a', '#6a5a6a', '#7a7a6a', '#9a7a5a', '#5a6a7a'];
 
-export function createCity(seed) {
-  const rng = mulberry32(seed);
-  const roadsV = []; // vertical road centre x
-  const roadsH = []; // horizontal road centre y
-  for (let x = 220; x < BEACH_X - 60; x += BLOCK) roadsV.push(x);
-  for (let y = 220; y < WORLD - 60; y += BLOCK) roadsH.push(y);
+export function generateCity(seed) {
+  const rand = mulberry32(seed);
+  const roadsV = [];
+  const roadsH = [];
+  for (let x = 200; x <= 2400; x += ROAD_STEP) roadsV.push(x);
+  for (let y = 200; y <= 2200; y += ROAD_STEP) roadsH.push(y);
 
+  // Buildings fill the blocks between roads.
   const buildings = [];
-  const trees = [];
-  const lots = [];
-  for (let ix = 0; ix < roadsV.length - 1; ix++) {
-    for (let iy = 0; iy < roadsH.length - 1; iy++) {
-      const x0 = roadsV[ix] + ROAD_W / 2 + 14;
-      const y0 = roadsH[iy] + ROAD_W / 2 + 14;
-      const x1 = roadsV[ix + 1] - ROAD_W / 2 - 14;
-      const y1 = roadsH[iy + 1] - ROAD_W / 2 - 14;
-      const park = rng() < 0.14;
-      const plaza = !park && rng() < 0.10;
-      if (park) {
-        for (let t = 0; t < 7; t++) {
-          trees.push({ x: x0 + rng() * (x1 - x0), y: y0 + rng() * (y1 - y0), r: 10 + rng() * 8 });
-        }
-        lots.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0, kind: 'park' });
+  for (let bx = 0; bx < roadsV.length - 1; bx++) {
+    for (let by = 0; by < roadsH.length - 1; by++) {
+      const x0 = roadsV[bx] + ROAD_W / 2 + 14;
+      const y0 = roadsH[by] + ROAD_W / 2 + 14;
+      const x1 = roadsV[bx + 1] - ROAD_W / 2 - 14;
+      const y1 = roadsH[by + 1] - ROAD_W / 2 - 14;
+      const w = x1 - x0;
+      const h = y1 - y0;
+      // One plaza / park in the middle of town.
+      if (bx === 3 && by === 3) {
+        buildings.push({ x: x0, y: y0, w, h, park: true, color: '#7fb069', roof: '#5a8a4a' });
         continue;
       }
-      if (plaza) { lots.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0, kind: 'plaza' }); continue; }
-      const cols = (x1 - x0) > 200 ? 2 : 1;
-      const rows = (y1 - y0) > 200 ? 2 : 1;
-      const pal = PALETTES[Math.floor(rng() * PALETTES.length)];
-      for (let c = 0; c < cols; c++) {
-        for (let r = 0; r < rows; r++) {
-          const bw = (x1 - x0) / cols - 18;
-          const bh = (y1 - y0) / rows - 18;
-          const bx = x0 + c * ((x1 - x0) / cols) + 9;
-          const by = y0 + r * ((y1 - y0) / rows) + 9;
+      const n = 1 + Math.floor(rand() * 3);
+      if (n === 1) {
+        buildings.push({
+          x: x0 + rand() * w * 0.2, y: y0 + rand() * h * 0.2,
+          w: w * (0.6 + rand() * 0.25), h: h * (0.6 + rand() * 0.25),
+          color: BUILDING_COLORS[Math.floor(rand() * BUILDING_COLORS.length)],
+          roof: ROOF_COLORS[Math.floor(rand() * ROOF_COLORS.length)],
+        });
+      } else {
+        const vertical = rand() < 0.5;
+        for (let i = 0; i < n; i++) {
+          const bw = vertical ? w * (0.85 + rand() * 0.1) : w / n - 12;
+          const bh = vertical ? h / n - 12 : h * (0.85 + rand() * 0.1);
           buildings.push({
-            x: bx, y: by, w: bw, h: bh,
-            tall: rng() < 0.28,
-            color: pal[Math.floor(rng() * pal.length)],
-            roof: rng() < 0.5 ? 'flat' : 'pitched',
+            x: vertical ? x0 + 4 : x0 + i * (w / n) + 4,
+            y: vertical ? y0 + i * (h / n) + 4 : y0 + 4,
+            w: bw, h: bh,
+            color: BUILDING_COLORS[Math.floor(rand() * BUILDING_COLORS.length)],
+            roof: ROOF_COLORS[Math.floor(rand() * ROOF_COLORS.length)],
           });
         }
       }
     }
   }
-  // Beach palms and boardwalk props.
-  for (let y = 120; y < WORLD - 100; y += 130) {
-    trees.push({ x: BEACH_X - 40 + rng() * 60, y, r: 12 + rng() * 6, palm: true });
-  }
-  return { seed, roadsV, roadsH, buildings, trees, lots };
+
+  // Named districts for flavour.
+  const districts = [
+    { name: 'Old Port', x: 200, y: 200, w: 600, h: 600 },
+    { name: 'Downtown', x: 1100, y: 800, w: 600, h: 600 },
+    { name: 'Marina', x: 1700, y: 1700, w: 700, h: 500 },
+    { name: 'Solmar Beach', x: 200, y: 2280, w: 2200, h: 320 },
+  ];
+
+  // Landmarks: the safehouse, Mara's office, the bank, the docks.
+  const landmarks = {
+    safehouse: { x: 650, y: 650, label: 'Safehouse' },
+    marasOffice: { x: 1250, y: 950, label: "Mara's Office" },
+    bank: { x: 1550, y: 1250, label: 'Bay Bank' },
+    docks: { x: 350, y: 2050, label: 'Docks' },
+    casino: { x: 1850, y: 650, label: 'Palms Casino' },
+  };
+
+  return { seed, roadsV, roadsH, buildings, districts, landmarks, rand };
 }
 
+// Is a point on a road (drivable)?
 export function onRoad(city, x, y) {
-  if (x > BEACH_X) return false;
-  for (const rx of city.roadsV) if (Math.abs(x - rx) < ROAD_W / 2) return true;
-  for (const ry of city.roadsH) if (Math.abs(y - ry) < ROAD_W / 2) return true;
+  for (const rx of city.roadsV) {
+    if (Math.abs(x - rx) < ROAD_W / 2 && y > 100 && y < 2300) return true;
+  }
+  for (const ry of city.roadsH) {
+    if (Math.abs(y - ry) < ROAD_W / 2 && x > 100 && x < 2500) return true;
+  }
   return false;
 }
 
-export function nearestRoadPoint(city, x, y) {
-  let best = null; let bd = Infinity;
+// Nearest intersection to a point.
+export function nearestIntersection(city, x, y) {
+  let best = null;
+  let bestD = Infinity;
   for (const rx of city.roadsV) {
-    const px = rx, py = Math.max(0, Math.min(WORLD, y));
-    const d = (px - x) ** 2 + (py - y) ** 2;
-    if (d < bd) { bd = d; best = { x: px, y: py, vertical: true }; }
-  }
-  for (const ry of city.roadsH) {
-    const px = Math.max(0, Math.min(BEACH_X, x)), py = ry;
-    const d = (px - x) ** 2 + (py - y) ** 2;
-    if (d < bd) { bd = d; best = { x: px, y: py, vertical: false }; }
+    for (const ry of city.roadsH) {
+      const d = (x - rx) * (x - rx) + (y - ry) * (y - ry);
+      if (d < bestD) { bestD = d; best = { x: rx, y: ry }; }
+    }
   }
   return best;
 }
 
-export function randomRoadPoint(city, rng) {
-  const vertical = rng() < 0.5;
-  if (vertical) {
-    return { x: city.roadsV[Math.floor(rng() * city.roadsV.length)], y: 80 + rng() * (WORLD - 160), vertical: true };
+// Neighbouring intersections of one intersection (up/down/left/right).
+export function neighbours(city, ix, iy) {
+  const out = [];
+  for (const rx of city.roadsV) {
+    if (rx === ix) continue;
+    if (Math.abs(rx - ix) === ROAD_STEP) {
+      if (iy <= 2200) out.push({ x: rx, y: iy });
+    }
   }
-  return { x: 80 + rng() * (BEACH_X - 160), y: city.roadsH[Math.floor(rng() * city.roadsH.length)], vertical: false };
-}
-
-export function randomSidewalkPoint(city, rng) {
-  const p = randomRoadPoint(city, rng);
-  const off = (ROAD_W / 2 + 16) * (rng() < 0.5 ? -1 : 1);
-  if (p.vertical) return { x: p.x + off, y: p.y };
-  return { x: p.x, y: p.y + off };
-}
-
-// Circle vs building test; returns the building hit or null.
-export function hitBuilding(city, x, y, r) {
-  for (const b of city.buildings) {
-    if (x + r > b.x && x - r < b.x + b.w && y + r > b.y && y - r < b.y + b.h) return b;
+  for (const ry of city.roadsH) {
+    if (ry === iy) continue;
+    if (Math.abs(ry - iy) === ROAD_STEP) {
+      if (ix <= 2400) out.push({ x: ix, y: ry });
+    }
   }
-  return null;
+  return out;
 }
 
-// Push a circle out of buildings (and the world edge); returns true if moved.
-export function resolveBuildingCollision(city, p, r) {
-  let moved = false;
+// Circle vs building collision: push a circle out of any building it overlaps.
+export function collideBuildings(city, x, y, r) {
+  let nx = x;
+  let ny = y;
   for (const b of city.buildings) {
-    const cx = Math.max(b.x, Math.min(p.x, b.x + b.w));
-    const cy = Math.max(b.y, Math.min(p.y, b.y + b.h));
-    const dx = p.x - cx, dy = p.y - cy;
+    if (b.park) continue;
+    const cx = Math.max(b.x, Math.min(nx, b.x + b.w));
+    const cy = Math.max(b.y, Math.min(ny, b.y + b.h));
+    const dx = nx - cx;
+    const dy = ny - cy;
     const d2 = dx * dx + dy * dy;
     if (d2 < r * r && d2 > 0.0001) {
       const d = Math.sqrt(d2);
-      p.x = cx + (dx / d) * r; p.y = cy + (dy / d) * r;
-      moved = true;
+      nx = cx + (dx / d) * r;
+      ny = cy + (dy / d) * r;
     } else if (d2 <= 0.0001) {
-      p.x += r; moved = true;
+      // Centre inside the building: push out along the shortest side.
+      const left = nx - b.x;
+      const right = b.x + b.w - nx;
+      const top = ny - b.y;
+      const bottom = b.y + b.h - ny;
+      const m = Math.min(left, right, top, bottom);
+      if (m === left) nx = b.x - r;
+      else if (m === right) nx = b.x + b.w + r;
+      else if (m === top) ny = b.y - r;
+      else ny = b.y + b.h + r;
     }
   }
-  if (p.x < r) { p.x = r; moved = true; }
-  if (p.y < r) { p.y = r; moved = true; }
-  if (p.x > WORLD - r) { p.x = WORLD - r; moved = true; }
-  if (p.y > WORLD - r) { p.y = WORLD - r; moved = true; }
-  return moved;
+  // World bounds + water keep-out (the sea is not drivable).
+  nx = Math.max(40, Math.min(WORLD - 40, nx));
+  ny = Math.max(40, Math.min(WATER_Y - 30, ny));
+  return { x: nx, y: ny };
 }
