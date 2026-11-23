@@ -1,14 +1,61 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Solmar Bay — an open-world crime story</title>
+<title>Solmar Bay — an open-world crime game</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <canvas id="game"></canvas>
-<div id="hint">Solmar Bay — WASD move / drive · E enter car · Space punch · Click shoot · P pause</div>
+<canvas id="minimap" width="200" height="200"></canvas>
+
+<div id="title-menu" class="overlay">
+  <div class="panel">
+    <h1>SOLMAR BAY</h1>
+    <p class="tag">An open-world crime game. Steal cars. Outrun the cops. Work for Mara.</p>
+    <p class="story">Danny Reyes came back to Solmar Bay broke. Fixer Mara Solis has five jobs for a wheelman who asks no questions — and a city full of cars, cops and cash.</p>
+    <div class="buttons">
+      <button id="btn-new">New Game</button>
+      <button id="btn-continue" class="hidden">Continue</button>
+    </div>
+    <p class="controls">WASD / arrows — walk &amp; drive · Shift — run / handbrake · E — enter or exit a car<br>
+    Space — punch · Mouse click — shoot (after the first job) · P — pause · M — mute</p>
+  </div>
+</div>
+
+<div id="pause-menu" class="overlay hidden">
+  <div class="panel">
+    <h1>PAUSED</h1>
+    <p class="tag">Solmar Bay waits for no one. Except now.</p>
+    <div class="buttons">
+      <button id="btn-resume">Resume</button>
+      <button id="btn-quit">Quit to Title</button>
+    </div>
+  </div>
+</div>
+
+<div id="mission-menu" class="overlay hidden">
+  <div class="panel">
+    <h1 id="mission-title">JOB DONE</h1>
+    <p id="mission-text" class="tag"></p>
+    <div class="buttons">
+      <button id="btn-next-job">Next Job</button>
+    </div>
+  </div>
+</div>
+
+<div id="end-menu" class="overlay hidden">
+  <div class="panel">
+    <h1 id="end-title">BUSTED</h1>
+    <p id="end-text" class="tag"></p>
+    <div class="buttons">
+      <button id="btn-respawn">Back on the Streets</button>
+    </div>
+  </div>
+</div>
+
 <script type="module" src="src/main.js"></script>
 </body>
 </html>
